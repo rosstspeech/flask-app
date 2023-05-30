@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}{% endblock %}</title>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.1/css/all.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css"
+        integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.6.3.min.js"
+        integrity="sha256-pvPw+upLPUjgMXY0G+8O0xUf+/Im1MZjXxxgOcBQBXU=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js"
+        integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
+        crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+    <div class="container-fluid">
+        <div class="display col-sm-12">
+
+        </div>
+        <button class="col-sm-6 btn btn-success" onclick="toggle_mic()" id="mic_button">
+            <i class="fas fa-microphone-slash"> Microphone</i>
+        </button>
+        <button style="border-radius: 10px;" id="status" class="col-12 btn-danger" disabled><b
+                id="status_text">Not-Connected</b></button>
+
+    </div>
+</body>
+<script>
+    const display = document.querySelector('.display')
+    var mediaRecorder;
+    let chunks = []
+    function toggle_mic() {
+        var mic_button = document.getElementById("mic_button");
+        if (mic_button.children[0].classList[1] == "fa-microphone") {
+            mic_button.children[0].classList.replace("fa-microphone", "fa-microphone-slash")
+            console.log(mediaRecorder.stream.getAudioTracks())
+            mediaRecorder.stream.getAudioTracks().forEach(track => {
+                track.stop()
+            });
+            document.querySelector('#status_text').textContent = 'Muted';
+            document.getElementById("status").classList.replace("btn-success", "btn-danger")
+
+            const blob = new Blob(chunks, { 'type': "audio/wav" })
+            console.log("Total Blob Length => ", chunks.length)
+            chunks = []
+
+            audioURL = window.URL.createObjectURL(blob)
+            const audio = document.createElement('audio')
+            audio.controls = true
+            audio.src = audioURL
+            display.append(audio)
+            console.log("Audio URL => ", audioURL)
+            document.querySelector('audio').src = audioURL
+        } else {
+            mic_button.children[0].classList.replace("fa-microphone-slash", "fa-microphone")
+            navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+               
+                mediaRecorder = new MediaRecorder(stream)
+
+                const socket = new WebSocket('ws://localhost:5555/listen')
+                chunks = []
+
+                socket.onopen = () => {
+                    document.querySelector('#status_text').textContent = 'Connected';
+                    document.getElementById("status").classList.replace("btn-danger", "btn-success")
+                    mediaRecorder.addEventListener('dataavailable', async (event) => {
+                        if (event.data.size > 0 && socket.readyState == 1) {
+                            chunks.push(event.data)
+                            socket.send(event.data)
+
+                        }
+                    })
+                    mediaRecorder.start(250)
+                }
+
+            })
+        }
+
+    }
+
+</script>
+
+
+</html>
