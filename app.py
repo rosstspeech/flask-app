@@ -18,7 +18,7 @@ import queue
 # ===============================================================================
 #  Speechmatics Configuration
 # ===============================================================================
-API_KEY = "CGybZWO47E3m6jTc9u0sq4KrH4rMtRMt" # Speechmatics API Key
+API_KEY = "" # Speechmatics API Key
 LANGUAGE = "en"
 CONNECTION_URL = f"wss://eu2.rt.speechmatics.com/v2/{LANGUAGE}"
 
