@@ -16,11 +16,46 @@ from threading import Thread
 import queue
 
 # ===============================================================================
+# import API Endpoints
+# ===============================================================================
+from hello.hello import hello
+
+# ===============================================================================
+#  Flask App Configuration
+# ===============================================================================
+load_dotenv()
+app = Flask(__name__)
+app.secret_key = 'arbex'
+routes = web.RouteTableDef()
+
+# ===============================================================================
 #  Speechmatics Configuration
 # ===============================================================================
-API_KEY = "" # Speechmatics API Key
+API_KEY = os.getenv("API_KEY") # Speechmatics API Key
 LANGUAGE = "en"
 CONNECTION_URL = f"wss://eu2.rt.speechmatics.com/v2/{LANGUAGE}"
+
+# class AudioProcessor:
+#     def __init__(self):
+#         self.wave_data = bytearray()
+#         self.read_offset = 0
+    
+#     async def read(self, chunk_size):
+#         print("READ")
+#         while self.read_offset + chunk_size > len(self.wave_data):
+#             await asyncio.sleep(0.001)
+#         new_offset = self.read_offset + chunk_size
+#         data = self.wave_data[self.read_offset:new_offset]
+#         self.read_offset = new_offset
+#         # print(">>>>>>>>>>>>>", data)
+#         return data
+    
+#     def write_audio(self, data):
+#         print("WRITE")
+#         self.wave_data.extend(data)
+#         return
+    
+
 
 class QueueIO:
     def __init__(self):
@@ -38,55 +73,29 @@ class QueueIO:
         if not self._closed:
             return self._queue.get()
         return None
-
-class AudioProcessor:
-    def __init__(self):
-        self.wave_data = bytearray()
-        self.read_offset = 0
     
-    async def read(self, chunk_size):
-        print("READ")
-        while self.read_offset + chunk_size > len(self.wave_data):
-            await asyncio.sleep(0.001)
-        new_offset = self.read_offset + chunk_size
-        data = self.wave_data[self.read_offset:new_offset]
-        self.read_offset = new_offset
-        # print(">>>>>>>>>>>>>", data)
-        return data
-    
-    def write_audio(self, data):
-        print("WRITE")
-        self.wave_data.extend(data)
-        return
-    
-# ===============================================================================
-# import API Endpoints
-# ===============================================================================
-from hello.hello import hello
-
-# ===============================================================================
-#  Flask App Configuration
-# ===============================================================================
-load_dotenv()
-app = Flask(__name__)
-app.secret_key = 'arbex'
-routes = web.RouteTableDef()
-
 # ===============================================================================
 #  Flask Socket Endpoints
 # =============================================================================== 
 async def socket(request):
-
-    audio_processor = AudioProcessor()
-    start_speechmatics_transcription(audio_processor)
+    audio_queue = QueueIO()
+    start_speechmatics_transcription(audio_queue)
 
     ws = web.WebSocketResponse()
-    await ws.prepare(request) 
+    await ws.prepare(request)
 
-    while not ws.closed:
-        data = await ws.receive_bytes()
-        # Speechmatics
-        audio_processor.write_audio(data)
+    try:
+        while not ws.closed:
+            data = await ws.receive_bytes()
+            audio_queue.write(data)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        # Close all running threads
+        audio_queue.close()
+        print("Closing the thread")
+
+    return ws
 
 # ===============================================================================
 #  Flask App Functions
@@ -112,8 +121,6 @@ def print_error(msg):
     print(f"[ ERROR] {msg}")
 def print_warning(msg):
     print(f"[ WARNING] {msg}")
-def print_audio_added(msg):
-    print(f"[ AUDIO_ADDED] {msg}")
 
 # Removed async from function
 def start_speechmatics_transcription(stream):
@@ -157,11 +164,6 @@ def start_speechmatics_transcription(stream):
         event_name=speechmatics.models.ServerMessageType.Warning,
         event_handler=print_warning
     )
-
-    # ws.add_event_handler(
-    #     event_name=speechmatics.models.ServerMessageType.AudioAdded,
-    #     event_handler=print_audio_added
-    # )
 
     # Define transcription parameters
     # Full list of parameters described here: https://speechmatics.github.io/speechmatics-python/models
