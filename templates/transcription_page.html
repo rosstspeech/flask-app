@@ -30,7 +30,8 @@
 </body>
 <script>
     const display = document.querySelector('.display')
-    var mediaRecorder;
+    var mediaRecorder,
+        socket;
     let chunks = []
     function toggle_mic() {
         var mic_button = document.getElementById("mic_button");
@@ -54,13 +55,15 @@
             display.append(audio)
             console.log("Audio URL => ", audioURL)
             document.querySelector('audio').src = audioURL
+            socket.close();
+            socket = null;
         } else {
             mic_button.children[0].classList.replace("fa-microphone-slash", "fa-microphone")
             navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
                
                 mediaRecorder = new MediaRecorder(stream)
 
-                const socket = new WebSocket('ws://localhost:5555/listen')
+                socket = new WebSocket('ws://localhost:5555/listen')
                 chunks = []
 
                 socket.onopen = () => {

@@ -12,7 +12,7 @@ import aiohttp_jinja2
 import speechmatics
 import asyncio
 import jinja2
-from threading import Thread
+import threading
 import queue
 
 # ===============================================================================
@@ -34,6 +34,9 @@ routes = web.RouteTableDef()
 API_KEY = os.getenv("API_KEY") # Speechmatics API Key
 LANGUAGE = "en"
 CONNECTION_URL = f"wss://eu2.rt.speechmatics.com/v2/{LANGUAGE}"
+
+stop_thread = False
+exit_event = threading.Event()
 
 # class AudioProcessor:
 #     def __init__(self):
@@ -78,21 +81,30 @@ class QueueIO:
 #  Flask Socket Endpoints
 # =============================================================================== 
 async def socket(request):
+    global stop_thread
+    print(threading.enumerate())
     audio_queue = QueueIO()
     start_speechmatics_transcription(audio_queue)
+
+    stop_thread = False
 
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
     try:
         while not ws.closed:
-            data = await ws.receive_bytes()
-            audio_queue.write(data)
+            msg = await ws.receive()
+            if msg.type == web.WSMsgType.BINARY:
+                data = msg.data
+                audio_queue.write(data)
     except asyncio.CancelledError:
-        pass
+        audio_queue.close()
+        print("Closing the thread (cancel)")
     finally:
         # Close all running threads
         audio_queue.close()
+        stop_thread = True
+        exit_event.set()
         print("Closing the thread")
 
     return ws
@@ -121,6 +133,16 @@ def print_error(msg):
     print(f"[ ERROR] {msg}")
 def print_warning(msg):
     print(f"[ WARNING] {msg}")
+
+def smx_run(ws, stream, conf, settings):
+    global stop_thread
+    print("Sending to SMX")
+    ws.run_synchronously(stream, conf, settings)
+    if stop_thread:
+        ws.stop()
+    if exit_event.is_set():
+        ws.stop()
+        
 
 # Removed async from function
 def start_speechmatics_transcription(stream):
@@ -175,9 +197,10 @@ def start_speechmatics_transcription(stream):
     settings = speechmatics.models.AudioSettings()
 	# AudioRecorder sends compressed audio - removing the following defaults the type to file
     # settings.encoding = "pcm_f32le"
-    smx_thread = Thread(
-        target=ws.run_synchronously, args=[stream, conf, settings],
+    smx_thread = threading.Thread(
+        target=smx_run, args=[ws,stream, conf, settings],
     )
+    smx_thread.daemon = True
     smx_thread.start()
 
 
